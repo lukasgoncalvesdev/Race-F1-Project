@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 
+
 from analisador.api import buscar_corrida
 from analisador.analise import montar_tabela, calcular_ranking_equipes
 from analisador.relatorios import gerar_relatorio
@@ -11,6 +12,7 @@ from analisador.comparacao import (
     comparar_companheiros,
 )
 from analisador.evolucao import calcular_evolucao
+from analisador.temporadas import comparar_temporadas
 
 
 # ============================================================
@@ -28,7 +30,7 @@ st.set_page_config(
 # CABEÇALHO
 # ============================================================
 
-st.title("🏎️ Race Data Analyzer")
+st.title("🏎️ Projeto LK F1")
 st.caption("Dashboard de análise de corridas de Fórmula 1")
 st.divider()
 
@@ -213,10 +215,7 @@ else:
 
     st.divider()
 
-    # --------------------------------------------------------
-    # ABAS DO DASHBOARD
-    # --------------------------------------------------------
-
+  
     (
         aba_resultados,
         aba_graficos,
@@ -224,6 +223,7 @@ else:
         aba_relatorio,
         aba_duelo,
         aba_evolucao,
+        aba_temporadas,
     ) = st.tabs(
         [
             "🏁 Pilotos",
@@ -232,6 +232,7 @@ else:
             "📄 Relatório",
             "⚔️ Duelo de Pilotos",
             "📈 Evolução dos Pilotos",
+            "🏆 Comparar Temporadas",
         ]
     )
 
@@ -726,6 +727,175 @@ else:
                 f"Não foi possível calcular a evolução: {erro}"
             )
 
+    # ========================================================
+    # ABA 7 — COMPARAÇÃO ENTRE TEMPORADAS
+    # ========================================================
+
+    with aba_temporadas:
+        st.subheader("🏆 Comparador de Temporadas")
+
+        st.write(
+            "Compare o desempenho de um piloto em dois "
+            "campeonatos diferentes de Fórmula 1."
+        )
+
+        anos_disponiveis = list(range(2025, 1949, -1))
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            ano_a = st.selectbox(
+                "Primeira temporada",
+                options=anos_disponiveis,
+                index=0,
+                key="comparacao_ano_a",
+            )
+
+        with col_b:
+            ano_b = st.selectbox(
+                "Segunda temporada",
+                options=anos_disponiveis,
+                index=1,
+                key="comparacao_ano_b",
+            )
+
+        if ano_a == ano_b:
+            st.warning("Escolha duas temporadas diferentes.")
+        else:
+            try:
+                with st.spinner("Buscando dados das temporadas..."):
+                    resultados_a = buscar_resultados_temporada(ano_a)
+                    resultados_b = buscar_resultados_temporada(ano_b)
+
+                if resultados_a.empty or resultados_b.empty:
+                    st.warning(
+                        "Não há resultados disponíveis para uma "
+                        "ou ambas as temporadas selecionadas."
+                    )
+                else:
+                    pilotos_a = set(resultados_a["Piloto"].dropna())
+                    pilotos_b = set(resultados_b["Piloto"].dropna())
+
+                    pilotos = sorted(pilotos_a | pilotos_b)
+
+                    piloto = st.selectbox(
+                        "Escolha o piloto",
+                        options=pilotos,
+                        key="piloto_comparacao_temporadas",
+                    )
+
+                    if piloto not in pilotos_a or piloto not in pilotos_b:
+                        st.info(
+                            "Este piloto não participou das duas "
+                            "temporadas. Os indicadores da temporada "
+                            "sem resultados serão apresentados como zero."
+                        )
+
+                    comparacao = comparar_temporadas(
+                        resultados_a,
+                        resultados_b,
+                        piloto,
+                        ano_a,
+                        ano_b,
+                    )
+
+                    st.subheader(f"Estatísticas de {piloto}")
+
+                    st.dataframe(
+                        comparacao,
+                        use_container_width=True,
+                    )
+
+                    st.subheader("Diferença entre as temporadas")
+
+                    pontos_a = float(comparacao.loc["Pontos", str(ano_a)])
+                    pontos_b = float(comparacao.loc["Pontos", str(ano_b)])
+
+                    diferenca = pontos_b - pontos_a
+
+                    st.metric(
+                        f"Variação de pontos: {ano_b} em relação a {ano_a}",
+                        f"{diferenca:+g}",
+                    )
+
+                    st.bar_chart(
+                        comparacao.loc[
+                            ["Pontos", "Vitórias", "Pódios"]
+                        ].T,
+                        y_label="Quantidade",
+                    )
+
+                    st.subheader("Evolução dos pontos acumulados")
+
+                    evolucao_a = calcular_evolucao(resultados_a)
+                    evolucao_b = calcular_evolucao(resultados_b)
+
+                    piloto_a_dados = evolucao_a[
+                        evolucao_a["Piloto"] == piloto
+                    ][
+                        ["Número da corrida", "Pontos acumulados"]
+                    ].copy()
+
+                    piloto_b_dados = evolucao_b[
+                        evolucao_b["Piloto"] == piloto
+                    ][
+                        ["Número da corrida", "Pontos acumulados"]
+                    ].copy()
+
+                    piloto_a_dados = piloto_a_dados.rename(
+                        columns={
+                            "Pontos acumulados": str(ano_a)
+                        }
+                    )
+
+                    piloto_b_dados = piloto_b_dados.rename(
+                        columns={
+                            "Pontos acumulados": str(ano_b)
+                        }
+                    )
+
+                    grafico_temporadas = pd.merge(
+                        piloto_a_dados,
+                        piloto_b_dados,
+                        on="Número da corrida",
+                        how="outer",
+                    ).sort_values("Número da corrida")
+
+                    if not grafico_temporadas.empty:
+                        grafico_temporadas = grafico_temporadas.set_index(
+                            "Número da corrida"
+                        )
+
+                        st.line_chart(
+                            grafico_temporadas,
+                            y_label="Pontos acumulados",
+                        )
+                    else:
+                        st.info(
+                            "Não há dados suficientes para gerar "
+                            "o gráfico de evolução."
+                        )
+
+                    st.caption(
+                        "O gráfico compara os pontos acumulados por "
+                        "número de corrida. As etapas podem ser diferentes "
+                        "entre temporadas."
+                    )
+
+                    st.download_button(
+                        "⬇️ Baixar comparação entre temporadas (CSV)",
+                        data=comparacao.to_csv().encode("utf-8-sig"),
+                        file_name=(
+                            f"comparacao_{piloto.replace(' ', '_')}_"
+                            f"{ano_a}_{ano_b}.csv"
+                        ),
+                        mime="text/csv",
+                    )
+
+            except Exception as erro:
+                st.error(
+                    f"Não foi possível comparar as temporadas: {erro}"
+                )
 
 # ============================================================
 # RODAPÉ
