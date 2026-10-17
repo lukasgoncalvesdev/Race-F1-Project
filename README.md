@@ -1,11 +1,11 @@
 
-# 🏎️ Race Data Analyzer
+# Projeto de F1 
 
 Dashboard para análise de resultados de corridas de Fórmula 1, desenvolvido em Python.
 
 ## Sobre o projeto
 
-O Race Data Analyzer consulta dados de corridas por meio da API Jolpica F1 e transforma esses dados em tabelas, estatísticas, gráficos e relatórios.
+Esse programa consulta dados de corridas por meio da API Jolpica F1 e transforma esses dados em tabelas, estatísticas, gráficos e relatórios.
 
 O projeto foi desenvolvido como estudo prático de programação, análise de dados e visualização aplicada ao automobilismo.
 
