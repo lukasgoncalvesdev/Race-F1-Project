@@ -10,6 +10,7 @@ from analisador.comparacao import (
     comparar_pilotos,
     comparar_companheiros,
 )
+from analisador.evolucao import calcular_evolucao
 
 
 # ============================================================
@@ -127,28 +128,28 @@ if dados is None:
     col1, col2, col3 = st.columns(3)
 
     col1.metric(
-        "🏁",
-        "Resultados",
-        "Classificação dos pilotos",
+        "🏁 Resultados",
+        "Pilotos",
+        "Classificação da corrida",
     )
 
     col2.metric(
-        "🏆",
-        "Equipes",
-        "Pontuação por construtor",
+        "🏆 Equipes",
+        "Construtores",
+        "Pontuação por equipe",
     )
 
     col3.metric(
-        "📊",
-        "Estatísticas",
-        "Gráficos e comparações",
+        "📊 Estatísticas",
+        "Gráficos",
+        "Dados e comparações",
     )
 
     st.divider()
     st.subheader("⚔️ Duelo de Pilotos")
     st.write(
-        "Use a aba de duelo depois de carregar uma corrida "
-        "para acessar a comparação de pilotos."
+        "Carregue uma corrida para acessar as abas de análise, "
+        "incluindo o duelo e a evolução dos pilotos."
     )
 
 
@@ -222,6 +223,7 @@ else:
         aba_equipes,
         aba_relatorio,
         aba_duelo,
+        aba_evolucao,
     ) = st.tabs(
         [
             "🏁 Pilotos",
@@ -229,6 +231,7 @@ else:
             "🏆 Equipes",
             "📄 Relatório",
             "⚔️ Duelo de Pilotos",
+            "📈 Evolução dos Pilotos",
         ]
     )
 
@@ -596,6 +599,133 @@ else:
                 f"Não foi possível carregar a comparação: {erro}"
             )
 
+    # ========================================================
+    # ABA 6 — EVOLUÇÃO DOS PILOTOS
+    # ========================================================
+
+    with aba_evolucao:
+        st.subheader("📈 Evolução dos Pilotos")
+
+        st.write(
+            "Acompanhe a pontuação acumulada dos pilotos "
+            "corrida após corrida durante uma temporada."
+        )
+
+        temporada_evolucao = st.selectbox(
+            "Temporada da evolução",
+            options=list(range(2025, 1949, -1)),
+            index=0,
+            key="temporada_evolucao",
+        )
+
+        try:
+            with st.spinner(
+                f"Calculando a evolução da temporada "
+                f"{temporada_evolucao}..."
+            ):
+                resultados_evolucao = buscar_resultados_temporada(
+                    temporada_evolucao
+                )
+
+                evolucao = calcular_evolucao(
+                    resultados_evolucao
+                )
+
+            if evolucao.empty:
+                st.warning(
+                    "Não há dados disponíveis para essa temporada."
+                )
+            else:
+                pilotos_disponiveis = sorted(
+                    evolucao["Piloto"].unique()
+                )
+
+                pilotos_selecionados = st.multiselect(
+                    "Selecione os pilotos que deseja acompanhar",
+                    options=pilotos_disponiveis,
+                    default=pilotos_disponiveis[:5],
+                    key="pilotos_evolucao",
+                )
+
+                if not pilotos_selecionados:
+                    st.info("Selecione pelo menos um piloto.")
+                else:
+                    dados_grafico = evolucao[
+                        evolucao["Piloto"].isin(
+                            pilotos_selecionados
+                        )
+                    ]
+
+                    grafico_evolucao = dados_grafico.pivot(
+                        index="Número da corrida",
+                        columns="Piloto",
+                        values="Pontos acumulados",
+                    )
+
+                    nomes_corridas = (
+                        evolucao[
+                            ["Número da corrida", "Corrida"]
+                        ]
+                        .drop_duplicates()
+                        .sort_values("Número da corrida")
+                        .set_index("Número da corrida")["Corrida"]
+                    )
+
+                    grafico_evolucao.index = [
+                        nomes_corridas.loc[numero]
+                        for numero in grafico_evolucao.index
+                    ]
+
+                    st.line_chart(
+                        grafico_evolucao,
+                        x_label="Corrida",
+                        y_label="Pontos acumulados",
+                    )
+
+                    st.subheader("Classificação acumulada")
+
+                    ultima_corrida = evolucao[
+                        "Número da corrida"
+                    ].max()
+
+                    classificacao = evolucao[
+                        evolucao["Número da corrida"]
+                        == ultima_corrida
+                    ][
+                        ["Piloto", "Pontos acumulados"]
+                    ].copy()
+
+                    classificacao = classificacao.sort_values(
+                        "Pontos acumulados",
+                        ascending=False,
+                    ).reset_index(drop=True)
+
+                    classificacao.index = (
+                        classificacao.index + 1
+                    )
+                    classificacao.index.name = "Posição"
+
+                    st.dataframe(
+                        classificacao,
+                        use_container_width=True,
+                    )
+
+                    st.download_button(
+                        "⬇️ Baixar evolução completa (CSV)",
+                        data=evolucao.to_csv(
+                            index=False
+                        ).encode("utf-8-sig"),
+                        file_name=(
+                            f"evolucao_f1_{temporada_evolucao}.csv"
+                        ),
+                        mime="text/csv",
+                    )
+
+        except Exception as erro:
+            st.error(
+                f"Não foi possível calcular a evolução: {erro}"
+            )
+
 
 # ============================================================
 # RODAPÉ
@@ -603,5 +733,5 @@ else:
 
 st.divider()
 st.caption(
-    "Race Data Analyzer 8.0 · Dados fornecidos pela API Jolpica F1"
+    "Race Data Analyzer 9.0 · Dados fornecidos pela API Jolpica F1"
 )
